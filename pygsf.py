@@ -99,6 +99,7 @@ def testreader(filename):
 	# filename = "F:/Projects/multispectral/_Newbex/20170524-134208 - 0001-2026_1.gsf"
 	# filename = "F:/Projects/multispectral/_BedfordBasin2017/20170502 - 131750 - 0001-2026_1.gsf"
 	# filename = "C:/projects/multispectral/_BedfordBasin2017/20170502 - 150058 - 0001-2026_1.gsf"
+	filename = "D:/in2019_v07/Processing/Qimera/in2019_v07/Export/Investigator_em710_SN229/0272_20190418_170831_Investigator_em710_EM710.gsf"
 
 
 	print (filename)
@@ -116,16 +117,17 @@ def testreader(filename):
 	# # ax2 = f2.add_subplot(111)
 	# # ax3 = f3.add_subplot(111)
 
-	print ("pingcount, pingnumber, 100kHz, 200kHz, 400kHz")
+	#print ("pingcount, pingnumber, 100kHz, 200kHz, 400kHz")
 	while r.moreData():
 		# read a datagram.  If we support it, return the datagram type and aclass for that datagram
 		# The user then needs to call the read() method for the class to undertake a fileread and binary decode.  This keeps the read super quick.
 		numberofbytes, recordidentifier, datagram = r.readDatagram()
-		# print(datagram)
-		if recordidentifier == SWATH_BATHYMETRY:
-			print(recordidentifier, end=',')
+		#print(datagram)
+		if recordidentifier == PROCESSING_PARAMETERS:
+			#print(recordidentifier, end=',')
 			datagram.read()
-			datagram.snippettype = SNIPPET_NONE
+			print(datagram.installationParameters)
+			#datagram.snippettype = SNIPPET_NONE
 			# print ("%s Lat:%.3f Lon:%.3f Ping:%d Freq:%d Serial %s" % (datagram.currentRecordDateTime(), datagram.latitude, datagram.longitude, datagram.pingnumber, datagram.frequency, datagram.serialnumber))
 
 			# for cross profile plotting
@@ -137,16 +139,16 @@ def testreader(filename):
 			# 		bs.append(0)
 
 			# bs = [20 * math.log10(s) - 100 for s in datagram.MEAN_REL_AMPLITUDE_ARRAY]
-			samplearray = datagram.R2Soniccorrection()
-			if datagram.frequency == 100000:
-				freq100 = mean(samplearray)
-			if datagram.frequency == 200000:
-				freq200 = mean(samplearray)
-			if datagram.frequency == 400000:
-				freq400 = mean(samplearray)
+			#samplearray = datagram.R2Soniccorrection()
+			#if datagram.frequency == 100000:
+			#	freq100 = mean(samplearray)
+			#if datagram.frequency == 200000:
+			#	freq200 = mean(samplearray)
+			#if datagram.frequency == 400000:
+			#	freq400 = mean(samplearray)
 				# print ("%d,%d,%.3f,%.3f,%.3f" %(pingcount, datagram.pingnumber, freq100, freq200, freq400))
 				# print ("%d" %(pingcount))
-				pingcount += 1
+			#	pingcount += 1
 				# if len(bs) > 0:
 				# 	plt.plot(datagram.BEAM_ANGLE_ARRAY, bs, linewidth=0.25, color='blue')
 				# 	plt.ylim([-60,-5])
@@ -155,11 +157,57 @@ def testreader(filename):
 				# 	plt.pause(0.001)
 
 			# datagram.clippolar(-60, 60)
-	# print("Duration %.3fs" % (time.time() - start_time )) # time the process
+	print("Duration %.3fs" % (time.time() - start_time )) # time the process
 	# print ("PingCount:", pingcount)
 	return
 
 ###############################################################################
+class PROCESSING_PARAMETER:
+	# class to decode processing parameters in a gsf file
+	def __init__(self, fileptr, numbytes, recordidentifier, hdrlen):
+		self.recordidentifier = recordidentifier
+		self.offset = fileptr.tell()				# remember where this packet resides in the file so we can return if needed
+		self.hdrlen = hdrlen						# remember the header length.  it should be 8 bytes, bout if checksum then it is 12
+		self.numbytes = numbytes					# remember how many bytes this packet contains
+		self.fileptr = fileptr						# remember the file pointer so we do not need to pass from the host process
+		self.fileptr.seek(numbytes, 1)				# move the file pointer to the end of the record so we can skip as the default actions
+		self.name = "processing paramters"
+
+	def read(self, headeronly=False):
+		self.fileptr.seek(self.offset + self.hdrlen, 0)   # move the file pointer to the start of the record so we can read from disc
+
+		# time and number of params
+		hdrfmt = '>llh'
+		hdrlen = struct.calcsize(hdrfmt)
+		rec_unpack = struct.Struct(hdrfmt).unpack	
+		bytesRead = hdrlen
+		
+		self.fileptr.seek(self.offset + self.hdrlen , 0)   # move the file pointer to the start of the record so we can read from disc			  
+		data = self.fileptr.read(hdrlen)
+		s = rec_unpack(data)
+		self.time 			= s[0]
+		self.numparams		= s[2]
+		
+		# recursively read parameters based on the number of parameters
+		i = 0
+		paramsizefmt = '>h'
+		paramsizelen = struct.calcsize(paramsizefmt)
+		rec_unpack = struct.Struct(paramsizefmt).unpack
+		self.installationParameters = {}
+		for i in range(self.numparams):
+			data = self.fileptr.read(paramsizelen)
+			s = rec_unpack(data)
+			asciiBytes = s[0]
+			paramText = self.fileptr.read(asciiBytes)
+			parameter = paramText.decode('utf-8', errors="ignore").split("=")
+			self.installationParameters[parameter[0]] = parameter[1].rstrip('\x00')
+			bytesRead = bytesRead + paramsizelen + asciiBytes
+			i = i + 1
+		# rogue bytes at the end of read present
+		bytesremain = self.numbytes - bytesRead
+		self.fileptr.seek(self.offset + bytesRead + bytesremain, 0)
+		return
+
 class UNKNOWN_RECORD:
 	'''used as a convenience tool for datagrams we have no bespoke classes.  Better to make a bespoke class'''
 	def __init__(self, fileptr, numbytes, recordidentifier, hdrlen):
@@ -841,7 +889,11 @@ class GSFREADER:
 		elif recordidentifier == SWATH_BATHYMETRY:
 			dg = SWATH_BATHYMETRY_PING(self.fileptr, numberofbytes, recordidentifier, hdrlen)
 			dg.scalefactors = self.scalefactors
-			return numberofbytes, recordidentifier, dg 
+			return numberofbytes, recordidentifier, dg
+		
+		elif recordidentifier == PROCESSING_PARAMETERS:
+			dg = PROCESSING_PARAMETER(self.fileptr, numberofbytes, recordidentifier, hdrlen)
+			return numberofbytes, recordidentifier, dg
 		
 		# elif recordidentifier == 3: # SOUND_VELOCITY_PROFILE
 			# dg = SOUND_VELOCITY_PROFILE(self.fileptr, numberofbytes)

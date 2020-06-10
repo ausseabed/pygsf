@@ -27,10 +27,10 @@ def main():
 	if len(sys.argv)==1:
 		parser.print_help()
 		sys.exit(1)
-	
+
 	args = parser.parse_args()
 	matches = []
-	
+
 	if args.recursive:
 		for root, dirnames, filenames in os.walk(os.path.dirname(args.inputFile)):
 			for f in fnmatch.filter(filenames, '*.gsf'):
@@ -42,7 +42,7 @@ def main():
 		else:
 			for filename in glob(args.inputFile):
 				matches.append(filename)
-	
+
 	print (matches)
 
 	# # print ("processing with settings: ", args)
@@ -54,7 +54,7 @@ def main():
 		convert(filename, args.odir, pointsourceID, float(args.intensitysource))
 		pointsourceID += 1
 
-def convert(filename, odir, pointsourceID = 1, intensitysource=100000):	
+def convert(filename, odir, pointsourceID = 1, intensitysource=100000):
 	recCount = 0
 	outFileName = os.path.join(os.path.dirname(os.path.abspath(filename)), odir, os.path.splitext(os.path.basename(filename))[0] + ".las")
 	outFileName = createOutputFileName(outFileName)
@@ -75,7 +75,7 @@ def convert(filename, odir, pointsourceID = 1, intensitysource=100000):
 	blue = []
 	gray_LL = 0 # min and max grey scales
 	gray_UL = 255
-	sample_LL = -60 
+	sample_LL = -60
 	sample_UL = 0
 	conv_01_99 = 5 # ( gray_UL - gray_LL ) / ( sample_UL - sample_LL )
 
@@ -96,12 +96,12 @@ def convert(filename, odir, pointsourceID = 1, intensitysource=100000):
 		datagram.cliptwtt(0)
 		datagram.clipintensity(0)
 		datagram.clippolar(-60,60)
-		
+
 		samplearray = datagram.R2Soniccorrection()
 
 		color = [min(max(0, int((s - sample_LL) * conv_01_99)), 255) for s in samplearray]
 		color = [255 -c for c in color]
-		
+
 		# the user can specify which frequency goes into the intensity slot...
 		if datagram.frequency == intensitysource:
 			intensity = color
@@ -114,7 +114,7 @@ def convert(filename, odir, pointsourceID = 1, intensitysource=100000):
 			blue = color
 			if len(red) == 0 or len(green) == 0:
 				continue
-		
+
 			# for each beam in the ping, compute the real world position
 			for i in range(len(datagram.DEPTH_ARRAY)):
 				if datagram.BEAM_FLAGS_ARRAY[i] < 0:
@@ -142,7 +142,7 @@ def convert(filename, odir, pointsourceID = 1, intensitysource=100000):
 	writer.computebbox_offsets()
 	writer.writepoints()
 
-	# we need to write the header after writing records so we can update the bounding box, point format etc 
+	# we need to write the header after writing records so we can update the bounding box, point format etc
 	writer.writeHeader()
 	writer.close()
 	r.close()
@@ -201,14 +201,14 @@ def destinationPoint(lat1, lon1, distance, bearing, radius):
 
 def calculateradiusFromLatitude(lat):
 	'''
-	given a latitude compute a localised earth radius in metres using wgs84 ellipsoid 
+	given a latitude compute a localised earth radius in metres using wgs84 ellipsoid
 	https://rechneronline.de/earth-radius/
 	'''
 	r = 6378.137 # semi major axis for wgs84
 	rp = 6356.752 # semi minor axis for wgs 84
 	B = math.radians(lat)
 	cosB = math.cos(B)
-	sinB = math.sin(B) 
+	sinB = math.sin(B)
 
 	R = (((r**2) * cosB)**2 + ((rp**2) * sinB)**2) / ((r * cosB)**2 + (rp * sinB)**2)
 	R = math.sqrt(R)
@@ -250,4 +250,3 @@ def eprint(*args, **kwargs):
 
 if __name__ == "__main__":
 	main()
-
